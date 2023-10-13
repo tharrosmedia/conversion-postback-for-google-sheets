@@ -174,8 +174,14 @@ function handleDirectAPIEvent(e) {
 }
 
 function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode) {
-    var apiVersion = "18.0"
     var credentials = getCredentials();
+    
+    // Check if Facebook credentials are present
+    if (!credentials["Facebook_Pixel_ID"] || !credentials["Facebook_API_Access_Token"]) {
+        Logger.log('Error: Facebook credentials are missing. Please fill them out in the Credentials sheet.');
+        return; // Exit the function early if credentials are missing
+    }
+    
     var fbPixelId = credentials["Facebook_Pixel_ID"];
     var fbAccessToken = credentials["Facebook_API_Access_Token"];
     let timestamp = convertToTimestamp(date); 
@@ -227,6 +233,13 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
 
 
 function sendGoogleEvent(lead_id, date) {
+    var credentials = getCredentials();
+
+    // Check if Google credentials are present
+    if (!credentials["Google_Tracking_ID"]) {  // replace with your actual key name for Google credentials
+        Logger.log('Error: Google credentials are missing. Please fill them out in the Credentials sheet.');
+        return; // Exit the function early if credentials are missing
+    }
     let timestamp = convertToTimestamp(date); 
     let googleApiUrl = 'https://www.google-analytics.com/collect';
     let payload = {
