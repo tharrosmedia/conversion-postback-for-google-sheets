@@ -83,10 +83,12 @@ Working with APIs:
 
 Considerations:
 - API Credentials: Ensure you replace placeholders like 'YOUR_API_VERSION' and 'YOUR_PIXEL_ID' with actual values.
-- Cell Value Mapping: Ensure the order of values being destructured matches your sheet layout: [a, firstName, lastName, email, phoneNumber, f, zipCode, projectValue, i, lead_id, k, date].
+- Cell Value Mapping: Ensure the order of values matches your sheet layout: [a, firstName, lastName, email, phoneNumber, f, zipCode, projectValue, i, lead_id, k, date].
 - Logging: Be mindful of logging sensitive data, especially in a production environment, due to data privacy concerns.
 - Testing: Always thoroughly test with various scenarios to ensure expected behavior, considering edge cases like invalid date formats or unexpected input.
 - Error Handling: Good practice with retry logic on API calls! Ensure you understand how errors propagate and are logged in your Google Sheets script environment.
+- Update 'Closed' in getName in the handleDirectAPIEvent function to the sheet you want the script to read.
+- Update 'Credentials' in getSheetByName in the getCredentials function if you have your API creds on another sheet.
 
 Usage:
 - Ensure the script is bound to the Google Sheet you're working with. Navigate to Extensions > Apps Script and paste this code into the Code.gs file, then save.
@@ -133,7 +135,7 @@ function hashValue(value) {
 }
 
 function getCredentials() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Credentials');
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Credentials'); // Refers to and reads the sheet of your credentials.
   var lastRow = sheet.getLastRow();  // Gets the index of the last row with content.
   var range = sheet.getRange(1, 1, lastRow, 2);  // Gets a range starting from row 1, column 1, and spanning all rows with content and 2 columns.
   var values = range.getValues();
@@ -150,6 +152,11 @@ function handleDirectAPIEvent(e) {
     let editedCell = e.range;
     let sourceSheet = editedCell.getSheet();
     
+    // Check if the edited sheet is named "Closed"
+    if (sourceSheet.getName() !== "Closed") {
+        return; // Exit the function if it's not the "Closed" sheet
+    }
+
     // Check if the edited cell is in column "I" and the value is either "Facebook" or "Google"
     if (editedCell.getColumn() === columnToNumber("I") && 
        ["facebook", "google"].includes(editedCell.getValue().toString().toLowerCase().trim())) {
