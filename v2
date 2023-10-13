@@ -185,6 +185,10 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
     
     var fbPixelId = credentials["Facebook_Pixel_ID"];
     var fbAccessToken = credentials["Facebook_API_Access_Token"];
+
+    // Obtain the name of the entire spreadsheet.
+    var spreadsheetName = SpreadsheetApp.getActiveSpreadsheet().getName();
+    
     let timestamp = convertToTimestamp(date); 
     let fbApiUrl = `https://graph.facebook.com/v${apiVersion}/${fbPixelId}/events?access_token=${fbAccessToken}`; 
     let payload = {
@@ -202,7 +206,7 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
                     "ph": [hashedPhoneNumber]
                 },
                 "custom_data": {
-                    "lead_event_source": "Elmar HVAC CRM",
+                    "lead_event_source": spreadsheetName,
                     "event_source": "crm"
                 }
             }
