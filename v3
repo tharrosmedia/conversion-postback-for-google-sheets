@@ -1,5 +1,5 @@
 /*
-This script checks a specific column in a Google Sheet for a value ("facebook" or "google") and posts to the respective API. It’s designed for businesses that advertise without a dedicated CRM, enabling them to automate data postbacks to advertising platforms for optimization purposes.
+This script checks a specific column in a trigger sheet for a value and posts to the respective API. It’s designed for businesses that advertise without a dedicated CRM, enabling them to automate data postbacks to advertising platforms for optimization purposes.
 
 How It Works:
 1. Advertise to a landing page or use an in-platform lead form.
@@ -108,12 +108,18 @@ const SHEET_NAMES = {
     TRIGGER_SHEET: 'Closed',
     LOG: 'App Script Messages'
 };
-const COLUMN_LETTERS = {
-    EDIT_TRIGGER: 'I',
+
+const HEADERS = {
+    FIRST_NAME: "First Name",
+    LAST_NAME: "Last Name",
+    PHONE_NUMBER: "Phone Number",
+    ZIPCODE: "Zip Code",
+    EMAIL: "Email",
+    LEAD_SOURCE: "Lead Source",
+    LEAD_ID: "Lead ID",
+    DATE_OF_CLOSE: "Date of Close",
 };
-const COLUMN_NUMBERS = {
-    DATA_RANGE_END: 12,
-};
+
 const API_INFO = {
     FACEBOOK: {
         TRIGGER_VALUE: 'facebook',
@@ -125,11 +131,9 @@ const API_INFO = {
     }
 };
 
-// Converts the column letter into a number.
-function columnToNumber(columnLetter, base = 26) {
-    return [...columnLetter].reduce((acc, letter) => 
-        acc * base + letter.charCodeAt(0) - 'A'.charCodeAt(0) + 1, 0
-    );
+// Searches the column names for the information needed.
+function getColumnIndex(headerRow, columnName) {
+    return headerRow.indexOf(columnName);
 }
 
 // Convert the time structured "YYYY-MM-DD HH:mm:ss" into a UNIX timestamp.
@@ -183,7 +187,6 @@ function logEvent(logMessage) {
     // Adding the log message to the "Script Errors" sheet
     logSheet.appendRow([new Date(), logMessage]);
 }
-
 function handleDirectAPIEvent(e) {
     logEvent("Script run started: handleDirectAPIEvent");
     try {
@@ -193,24 +196,59 @@ function handleDirectAPIEvent(e) {
         if (sourceSheet.getName() !== SHEET_NAMES.TRIGGER_SHEET) {
             return;
         }
+        
+        let headerRow = sourceSheet.getRange(1, 1, 1, sourceSheet.getLastColumn()).getValues()[0];
 
-        if (editedCell.getColumn() === columnToNumber(COLUMN_LETTERS.EDIT_TRIGGER) && 
+        // Get column indices for headers.
+        let firstNameIdx = getColumnIndex(headerRow, HEADERS.FIRST_NAME);
+        let lastNameIdx = getColumnIndex(headerRow, HEADERS.LAST_NAME);
+        let phoneNumberIdx = getColumnIndex(headerRow, HEADERS.PHONE_NUMBER);
+        let zipCodeIdx = getColumnIndex(headerRow, HEADERS.ZIPCODE);
+        let emailIdx = getColumnIndex(headerRow, HEADERS.EMAIL);
+        let leadSourceIdx = getColumnIndex(headerRow, HEADERS.LEAD_SOURCE);
+        let lead_idIdx = getColumnIndex(headerRow, HEADERS.LEAD_ID);
+        let dateIdx = getColumnIndex(headerRow, HEADERS.DATE_OF_CLOSE);
+        
+        // Check if any index is -1, which means the column name wasn't found
+        if ([firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx].includes(-1)) {
+        let variables = ["First Name", "Last Name", "Phone Number", "Zipcode", "Email", "Lead Source", "Lead ID", "Date"];
+        let missingVars = [];
+
+       [firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx].forEach((index, i) => {
+        if(index === -1) {
+          missingVars.push(variables[i]);
+        }
+      });
+
+      logEvent(`Error: Missing required columns: ${missingVars.join(', ')}.`);
+      return;
+      }
+
+        // Check if edited cell is in the "Lead Source" column and has a valid trigger value
+        if (editedCell.getColumn() === leadSourceIdx + 1 && 
            [API_INFO.FACEBOOK.TRIGGER_VALUE, API_INFO.GOOGLE.TRIGGER_VALUE].includes(editedCell.getValue().toString().toLowerCase().trim())) {
-            
+           
             let cellValue = editedCell.getValue().toString().toLowerCase().trim();
-            let dataRange = sourceSheet.getRange(editedCell.getRow(), 1, 1, COLUMN_NUMBERS.DATA_RANGE_END);
-            let [a, firstName, lastName, email, phoneNumber, f, zipCode, projectValue, i, lead_id, k, date] = dataRange.getValues()[0];
+            let dataRangeValues = sourceSheet.getRange(editedCell.getRow(), 1, 1, sourceSheet.getLastColumn()).getValues()[0];
+           
+            let firstName = dataRangeValues[firstNameIdx];
+            let lastName = dataRangeValues[lastNameIdx];
+            let phoneNumber = dataRangeValues[phoneNumberIdx];
+            let zipCode = dataRangeValues[zipCodeIdx];
+            let email = dataRangeValues[emailIdx];
+            let lead_id = dataRangeValues[lead_idIdx];
+            let date = dataRangeValues[dateIdx];
             let [hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode] = [firstName, lastName, email, phoneNumber, zipCode].map(val => hashValue(val));
             
             let eventHandlers = {
-                [API_INFO.FACEBOOK.TRIGGER_VALUE]: () => {
-                    logEvent("Facebook event triggered.");
-                    sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode);
-                },
-                [API_INFO.GOOGLE.TRIGGER_VALUE]: () => {
-                    logEvent("Google event triggered.");
-                    sendGoogleEvent(lead_id, date);
-                }
+              [API_INFO.FACEBOOK.TRIGGER_VALUE]: () => {
+              logEvent("Facebook event triggered.");
+              sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode);
+              },
+              [API_INFO.GOOGLE.TRIGGER_VALUE]: () => {
+              logEvent("Google event triggered.");
+              sendGoogleEvent(lead_id, date);
+              }
             };
             
             eventHandlers[cellValue]();
@@ -226,6 +264,12 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
     logEvent("Script run started: sendFacebookEvent");
 
     try {
+        if (!lead_id || lead_id.trim() === "" || lead_id.trim() === "-") {
+        // Log an error message if lead_id is blank or "-"
+        logEvent("Error in sendFacebookEvent: lead_id is blank or invalid.");
+        return; // Exit the function if lead_id is blank or "-"
+        }
+
         var credentials = getCredentials();
 
         API_INFO.FACEBOOK.REQUIRED_CREDENTIALS.forEach(credential => {
