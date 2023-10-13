@@ -135,14 +135,11 @@ function hashValue(value) {
 }
 
 function getCredentials() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Credentials'); // Refers to and reads the sheet of your credentials.
-  var lastRow = sheet.getLastRow();  // Gets the index of the last row with content.
-  var range = sheet.getRange(1, 1, lastRow, 2);  // Gets a range starting from row 1, column 1, and spanning all rows with content and 2 columns.
-  var values = range.getValues();
+  var values = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Credentials').getDataRange().getValues();
   var credentials = {};
   
   values.forEach(function(row) {
-    credentials[row[0]] = row[1]; // Map key-value pairs
+    credentials[row[0]] = row[1];
   });
   
   return credentials;
