@@ -174,7 +174,6 @@ function handleDirectAPIEvent(e) {
 }
 
 function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode) {
-    function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode) {
     var credentials = getCredentials();
     
     // Check if Facebook credentials are present
