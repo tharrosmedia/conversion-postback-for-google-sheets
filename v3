@@ -1,5 +1,5 @@
 /*
-This script checks a specific column in a trigger sheet for a value and posts to the respective API. It’s designed for businesses that advertise without a dedicated CRM, enabling them to automate data postbacks to advertising platforms for optimization purposes.
+This script checks a specific column in a Google Sheet for a value ("facebook" or "google") and posts to the respective API. It’s designed for businesses that advertise without a dedicated CRM, enabling them to automate data postbacks to advertising platforms for optimization purposes.
 
 How It Works:
 1. Advertise to a landing page or use an in-platform lead form.
@@ -13,6 +13,7 @@ Code Explanation:
 - columnToNumber(columnLetter): Converts a column letter into a column number.
 - convertToTimestamp(dateStr): Converts a structured time string or Date object into a UNIX timestamp.
 - hashValue(value): Converts a string into its SHA 256 hashed equivalent.
+- formatDateTimeWithSheetTimezone(): Pulls the timezone from the sheet user needed for the Google Ads Conversion API.
 - handleDirectAPIEvent(e): Handles the edit event, executing logic if the edited cell is in column "I" and its value is "Facebook" or "Google". It extracts necessary data from the row and triggers the appropriate API call function.
 - sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode): Sends an event to Facebook, with error handling and retry logic.
 - sendGoogleEvent(lead_id, date): Sends an event to Google with error handling and retry logic.
@@ -118,16 +119,18 @@ const HEADERS = {
     LEAD_SOURCE: "Lead Source",
     LEAD_ID: "Lead ID",
     DATE_OF_CLOSE: "Date of Close",
+    PROJECT_VALUE: "Project Value",
+    CURRENCY: "USD", // Change to header row name where the currency is defined if using multiple currencies.
 };
 
 const API_INFO = {
     FACEBOOK: {
         TRIGGER_VALUE: 'facebook',
-        REQUIRED_CREDENTIALS: ["Facebook_API_Version", "Facebook_Pixel_ID", "Facebook_API_Access_Token"]
+        REQUIRED_CREDENTIALS: ["Facebook_API_Version", "Facebook_Pixel_ID", "Facebook_API_Access_Token", "Conversion_Label"]
     },
     GOOGLE: {
         TRIGGER_VALUE: 'google',
-        REQUIRED_CREDENTIALS: ["Google_Tracking_ID"]
+        REQUIRED_CREDENTIALS: ["Google_Tracking_ID", "Conversion_Label"]
     }
 };
 
@@ -161,6 +164,7 @@ function hashValue(value) {
   }).join('');
 }
 
+// Pulls credentials from specified sheet.
 function getCredentials() {
   var values = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.CREDENTIALS).getDataRange().getValues();
   var credentials = {};
@@ -172,6 +176,14 @@ function getCredentials() {
   return credentials;
 }
 
+// Obtains the timezone of the active Google Sheet and formats the input date according to the required format.
+function formatDateTimeWithSheetTimezone(date) {
+    const sheetTimezone = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    const d = new Date(date);
+    return Utilities.formatDate(d, sheetTimezone, "yyyy-MM-dd HH:mm:ssXXX");
+}
+
+// Logs events in specified sheet.
 function logEvent(logMessage) {
     // Logging in both Google Apps Script log and in the sheet
     Logger.log(logMessage);
@@ -208,13 +220,14 @@ function handleDirectAPIEvent(e) {
         let leadSourceIdx = getColumnIndex(headerRow, HEADERS.LEAD_SOURCE);
         let lead_idIdx = getColumnIndex(headerRow, HEADERS.LEAD_ID);
         let dateIdx = getColumnIndex(headerRow, HEADERS.DATE_OF_CLOSE);
+        let projectValueIdx = getColumnIndex(headerRow, HEADERS.PROJECT_VALUE);
         
         // Check if any index is -1, which means the column name wasn't found
-        if ([firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx].includes(-1)) {
-        let variables = ["First Name", "Last Name", "Phone Number", "Zipcode", "Email", "Lead Source", "Lead ID", "Date"];
+        if ([firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx, projectValueIdx].includes(-1)) {
+        let variables = ["First Name", "Last Name", "Phone Number", "Zipcode", "Email", "Lead Source", "Lead ID", "Date", "Project Value"];
         let missingVars = [];
 
-       [firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx].forEach((index, i) => {
+       [firstNameIdx, lastNameIdx, phoneNumberIdx, zipCodeIdx, emailIdx, leadSourceIdx, lead_idIdx, dateIdx, projectValueIdx].forEach((index, i) => {
         if(index === -1) {
           missingVars.push(variables[i]);
         }
@@ -238,6 +251,7 @@ function handleDirectAPIEvent(e) {
             let email = dataRangeValues[emailIdx];
             let lead_id = dataRangeValues[lead_idIdx];
             let date = dataRangeValues[dateIdx];
+            let projectValue = dataRangeValues[projectValueIdx];
             let [hashedFirstName, hashedLastName, hashedEmail, hashedPhoneNumber, hashedZipCode] = [firstName, lastName, email, phoneNumber, zipCode].map(val => hashValue(val));
             
             let eventHandlers = {
@@ -247,7 +261,7 @@ function handleDirectAPIEvent(e) {
               },
               [API_INFO.GOOGLE.TRIGGER_VALUE]: () => {
               logEvent("Google event triggered.");
-              sendGoogleEvent(lead_id, date);
+              sendGoogleEvent(lead_id, date, projectValue);
               }
             };
             
@@ -274,7 +288,7 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
 
         API_INFO.FACEBOOK.REQUIRED_CREDENTIALS.forEach(credential => {
             if (!credentials[credential]) {
-                let msg = `Error: ${credential} is missing. Please fill it out in the Credentials sheet.`;
+                let msg = `Error: ${credential} is missing. Please fill it out in the "${SHEET_NAMES.CREDENTIALS}" sheet.`;
                 logEvent(msg);
                 Logger.log(msg);
                 return;
@@ -284,6 +298,7 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
         var fbApiVersion = credentials["Facebook_API_Version"];
         var fbPixelId = credentials["Facebook_Pixel_ID"];
         var fbAccessToken = credentials["Facebook_API_Access_Token"];
+        var conversion_label = credentials["Conversion_Label"];
 
         var spreadsheetName = SpreadsheetApp.getActiveSpreadsheet().getName();
         
@@ -292,7 +307,7 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
         let payload = {
             "data": [
                 {
-                    "event_name": "Lead",
+                    "event_name": conversion_label,
                     "event_time": timestamp,
                     "action_source": "system_generated",
                     "user_data": {
@@ -341,10 +356,15 @@ function sendFacebookEvent(lead_id, date, hashedFirstName, hashedLastName, hashe
     }
 }
 
-function sendGoogleEvent(lead_id, date) {
+function sendGoogleEvent(lead_id, date, projectValue) {
     logEvent("Script run started: sendGoogleEvent");
     
     try {
+        if (!lead_id || lead_id.trim() === "" || lead_id.trim() === "-") {
+            logEvent("Error in sendGoogleEvent: lead_id is blank or invalid.");
+            return;
+        }
+
         var credentials = getCredentials();
 
         API_INFO.GOOGLE.REQUIRED_CREDENTIALS.forEach(credential => {
@@ -356,11 +376,22 @@ function sendGoogleEvent(lead_id, date) {
             }
         });
 
-        let timestamp = convertToTimestamp(date); 
-        let googleApiUrl = 'https://www.google-analytics.com/collect';
+        var google_id = credentials["Google_Tracking_ID"];
+        var conversion_label = credentials["Conversion_Label"];
+      
+        let conversionDateTime = formatDateTimeWithSheetTimezone(date); 
+        let googleApiUrl = `https://www.googleadservices.com/pagead/conversion/${google_id}/`;
+
         let payload = {
-            // Your payload data here...
+            "google_conversion_id": google_id,
+            "google_conversion_label": conversion_label,
+            "google_conversion_value": projectValue,
+            "google_conversion_currency": HEADERS.CURRENCY,
+            "gclid": lead_id, 
+            "conversion_action_resource_name": conversion_label,
+            "conversion_date_time": conversionDateTime
         };
+
         let params = {
             method: 'post',
             payload: payload,
@@ -392,5 +423,5 @@ function sendGoogleEvent(lead_id, date) {
         let finalCatchError = 'Error sending event to Google: ' + e.toString();
         logEvent(finalCatchError);
         Logger.log(finalCatchError);
-  }
+    }
 }
